@@ -1,0 +1,3 @@
+[submodule "ksc"]
+	path = ksc
+	url = https://github.com/RedHatOfficial/ksc
