@@ -47,7 +47,7 @@ def main():
                       help="Path to a Module.symvers file."
                            "Current kernel path is used if not specified.",
                       metavar="SYMVERS")
-    parser.add_option("-s", "--stablelists", dest="stablelistdir",
+    parser.add_option("-w", "--stablelists", dest="stablelistdir",
                       help="Directory containing the stable abi symbols (default /lib/modules/)",
                       metavar="DIR",
                       default="/lib/modules/")
@@ -57,6 +57,12 @@ def main():
     parser.add_option("-o", "--overwrite",
                       action="store_true", dest="overwrite", default=False,
                       help="overwrite files without warning")
+    parser.add_option("-s", "--summary",
+                      action="store_true", dest="summary", default=False,
+                      help="produce a summary report")
+    parser.add_option("-q", "--quiet",
+                      action="store_true", dest="quiet", default=False,
+                      help="do not write report to stdout")
 
     (options, args) = parser.parse_args(sys.argv[1:])
 
@@ -83,13 +89,19 @@ def main():
             symver_name = os.path.dirname(symver_parts[0])
             symver_name = os.path.basename(symver_name)
 
-        symver_report = factory.generate_ksc(symver_file, symver_name)
-        kscreport.add_ksc(symver_report)
+        symver_result = factory.generate_ksc(symver_file, symver_name)
+        kscreport.add_ksc(symver_result)
 
-    print(kscreport.summary(options.reportfile, options.overwrite))
-
-    kscreport.full_report(options.reportfile, options.overwrite)
-
+    if options.summary:
+        if options.quiet:
+            kscreport.summary(options.reportfile, options.overwrite)
+        else:
+            print(kscreport.summary(options.reportfile, options.overwrite))
+    else:
+        if options.quiet:
+            kscreport.full_report(options.reportfile, options.overwrite)
+        else:
+            print(kscreport.full_report(options.reportfile, options.overwrite))
 
 
 class KscFactory(ksc.Ksc):
