@@ -14,9 +14,11 @@
 import sys
 import os
 from optparse import OptionParser
-#import yaml
 import report
 import result
+import lzma
+import tempfile
+import shutil
 
 # ksc installs into a non-standard pythonpath because *sigh*
 sys.path.append('/usr/share/')
@@ -70,8 +72,8 @@ def main():
         print("at least one ko file is required")
         sys.exit(1)
 
-
-    factory = KscFactory(options.ko,
+    (kernelModuleFiles, temp_dir)  = extract_xz_files(options.ko)
+    factory = KscFactory(kernelModuleFiles,
                          options.releasedir,
                          options.release,
                          options.stablelistdir,
@@ -103,6 +105,31 @@ def main():
         else:
             print(kscreport.full_report(options.reportfile, options.overwrite))
 
+    if temp_dir:
+        shutil.rmtree(temp_dir)
+
+
+def extract_xz_files(raw_ko_files):
+    temp_dir = None
+    kernelModuleFiles = list()
+    for k in raw_ko_files:
+        if k[-3:] == ".ko":
+            kernelModuleFiles.append(k)
+        elif k[-3:] == ".xz":
+
+            with lzma.open(k) as xzfile:
+                file_content = xzfile.read()
+
+            if temp_dir == None:
+                temp_dir = tempfile.mkdtemp()
+            kofile_name = temp_dir + os.sep + os.path.basename(k[:-3])
+
+            with open(kofile_name, "wb") as kofile:
+                kofile.write(file_content)
+                print(kofile_name)
+
+            kernelModuleFiles.append(kofile_name)
+    return (kernelModuleFiles, temp_dir)
 
 class KscFactory(ksc.Ksc):
     """
@@ -144,7 +171,6 @@ class KscFactory(ksc.Ksc):
             read in the kernel symbols and generate the reresult object
         """
         self.read_symvers(symvers)
-
         res = result.Result(
             name,
             symvers,
@@ -190,10 +216,8 @@ class KscFactory(ksc.Ksc):
                     if data[0] == "parm":
                         parms = data[1].strip().split(":", 1)
                         if "parm" not in self.modinfo[path]:
-                            #self.modinfo[path]["parm"] = dict()
                             self.modinfo[path]["parm"] = list()
 
-                        #self.modinfo[path]["parm"][parms[0]] = parms[1]
                         self.modinfo[path]["parm"].append({'name': parms[0],
                                                            'description':parms[1]})
                     else:
@@ -221,112 +245,6 @@ class KscFactory(ksc.Ksc):
             sys.exit(12)
 
         return exists
-
-
-#    def get_report(self):
-#        """
-#        Save a machine readable report
-#        """
-#        yamldata=dict()
-#        yamldata['summary']=list()
-#        yamldata['details']=list()
-#
-#        #print(yaml.dump(self))
-#        for ko_file in self.all_symbols_used:
-#            kmod={"name": os.path.basename(ko_file),
-#                  "version": self.vermagic[ko_file].strip()}
-#
-#            ns = list(filter(lambda x: x, self.import_ns[ko_file]))
-#            if len(self.import_ns[ko_file]) !=0:
-#                kmod['ns']=list(filter(lambda x: x, self.import_ns[ko_file]))
-#
-#            kmod['symbols'] = {'stable': sorted(self.stable_symbols[ko_file]),
-#                               #'unstable': sorted(self.nonstable_symbols_used[ko_file]),
-#          'unstable': [n for n in self.nonstable_symbols_used[ko_file] if n in self.total ] }
-#          'unknown': [n for n in self.nonstable_symbols_used[ko_file] if n not in self.total ] }
-#            kmod['modinfo']=self.modinfo[ko_file]
-#
-#            yamldata['summary'].append({
-#                        'kmod': os.path.basename(ko_file),
-#                        'results': {
-#                            'stable': len(kmod['symbols']['stable']),
-#                            'unstable': len(kmod['symbols']['unstable']),
-#                            'unknown': len(kmod['symbols']['unknown'])
-#                        }})
-#            yamldata['details'].append(kmod)
-#        return yamldata
-#
-#
-#    def save_report(self, yamldata, filename, overwrite=False):
-#        try:
-#            output_filename = self.prepare_file(filename, overwrite)
-#            with open(output_filename, "a") as f:
-#                yaml.dump(yamldata, f, default_flow_style=False)
-#
-#            print("Report writen to %s "%output_filename)
-#        except Exception as e:
-#            print("Error in saving the report file at %s" % output_filename)
-#            print(e)
-#            sys.exit(1)
-
-
-#class Result(object):
-#    def __init__(self):
-#        self.symvers = ""
-#        self.name = ""
-#
-##    def get_report(self):
-##        r = dict()
-##        r[self.symvers] = dict()
-##        for k in self.kmods.keys():
-##            r[self.symvers][k] = self.kmods[k]
-#
-#
-#    def get_report(self):
-#        """
-#        Save a machine readable report
-#        """
-#        yamldata=dict()
-#        yamldata[self.symvers]=list()
-#        print(yamldata)
-#
-#        for ko_file in self.all_symbols_used:
-#            print(ko_file)
-#            kmod={"name": os.path.basename(ko_file),
-#                  "version": self.modinfo[ko_file]['vermagic'].strip()}
-#
-#            ns = list(filter(lambda x: x, self.import_ns[ko_file]))
-#            if len(self.import_ns[ko_file]) !=0:
-#                kmod['ns']=list(filter(lambda x: x, self.import_ns[ko_file]))
-#
-#            kmod['symbols'] = {'stable': sorted(self.stable_symbols[ko_file]),
-#                               #'unstable': sorted(self.nonstable_symbols_used[ko_file]),
-#             'unstable': [n for n in self.nonstable_symbols_used[ko_file] if n in self.total ],
-#             'unknown': [n for n in self.nonstable_symbols_used[ko_file] if n not in self.total ] }
-#            kmod['modinfo']=self.modinfo[ko_file]
-#            #print(kmod)
-#            yamldata[self.symvers].append(kmod)
-#
-#        #print(yamldata)
-#        #print(yaml.dump(yamldata))
-#        return yamldata
-#
-#def prepare_file(filename, overwrite=False):
-#        """
-#        get a canonicalised text file
-#        """
-#        user_filename = os.path.expanduser(filename)
-#        output_filename = os.path.realpath(user_filename)
-#        if os.path.isfile(output_filename):
-#
-#            if overwrite==True:
-#                if os.path.isfile(output_filename):
-#                    with open(output_filename, 'w+') as f:
-#                        f.truncate()
-#
-#        return output_filename
-
-
 
 
 if __name__ == '__main__':
