@@ -126,7 +126,6 @@ def extract_xz_files(raw_ko_files):
 
             with open(kofile_name, "wb") as kofile:
                 kofile.write(file_content)
-                print(kofile_name)
 
             kernelModuleFiles.append(kofile_name)
     return (kernelModuleFiles, temp_dir)
