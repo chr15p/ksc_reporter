@@ -44,10 +44,10 @@ class Report(object):
                 if len(k.import_ns[ko_file]) != 0:
                     kmod['ns'] = list(filter(lambda x: x, k.import_ns[ko_file]))
 
-                kmod['symbols'] = {'stable': sorted(k.stable_symbols[ko_file]),
+                kmod['symbols'] = {'stable': sorted(k.get_stable_symbols(ko_file)),
                                    #'unstable': sorted(self.nonstable_symbols_used[ko_file]),
-                                   'unstable': sorted(k.nonstable_symbols_used[ko_file]),
-                                   'unknown': sorted(k.nonstable_symbols_used[ko_file])}
+                                   'unstable': sorted(k.get_unstable_symbols(ko_file)),
+                                   'unknown': sorted(k.get_unknown_symbols(ko_file))}
                 kmod['modinfo'] = k.modinfo[ko_file].copy()
                 report[k.kernelversion].append(kmod)
 
