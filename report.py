@@ -48,7 +48,7 @@ class Report(object):
                                    #'unstable': sorted(self.nonstable_symbols_used[ko_file]),
                                    'unstable': sorted(k.nonstable_symbols_used[ko_file]),
                                    'unknown': sorted(k.nonstable_symbols_used[ko_file])}
-                kmod['modifo'] = k.modinfo[ko_file].copy()
+                kmod['modinfo'] = k.modinfo[ko_file].copy()
                 report[k.kernelversion].append(kmod)
 
         if filename:
