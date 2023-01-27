@@ -9,17 +9,19 @@
 # http://www.gnu.org/copyleft/gpl.html for the full text of the
 # license.
 
-
+"""
+    a wrapper around ksc to test a kmod against arbitary kernel versions
+"""
 
 import sys
 import os
 from optparse import OptionParser
-import report
-import result
-import lzma
 import tempfile
 import shutil
+import lzma
 
+import kscreport
+import kscresult
 # ksc installs into a non-standard pythonpath because *sigh*
 sys.path.append('/usr/share/')
 sys.path.append('/usr/share/ksc')
@@ -32,27 +34,21 @@ def main():
         run the test, peint the result
     """
     parser = OptionParser()
-    parser.add_option("-k", "--ko", action="append", dest="ko",
-                      help="path to the ko file", metavar="KO")
+    parser.add_option("-m", "--kmod", action="append", dest="kmods",
+                      help="path to a kmod file", metavar="MODULE")
     parser.add_option("-f", "--reportfile", dest="reportfile",
                       metavar="REPORTFILE", default="~/ksc-report.txt",
                       help="file to write the report to "
                            "(default ~/ksc-report.txt)")
     parser.add_option("-d", "--releasedir", dest="releasedir",
-                      help="directory containing the stablelists to use "
-                           "(calculated from -s and -r if not given) ",
-                      metavar="DIR")
-    parser.add_option("-r", "--release", dest="release",
-                      help="RHEL release to compare for stablelist, e.g. 8.7"
-                           "(default current)", metavar="RELEASE")
-    parser.add_option("-y", "--symvers", dest="symvers", action="append",
-                      help="Path to a Module.symvers file."
-                           "Current kernel path is used if not specified.",
-                      metavar="SYMVERS")
-    parser.add_option("-w", "--stablelists", dest="stablelistdir",
-                      help="Directory containing the stable abi symbols (default /lib/modules/)",
-                      metavar="DIR",
-                      default="/lib/modules/")
+                      help="directory containing the stablelists to use ",
+                      metavar="DIR", default="/lib/modules/kabi-current/")
+    parser.add_option("-k", "--kernel", action="append", dest="kernels",
+                      help="kernel version to test agains", metavar="KERNEL")
+    parser.add_option("-y", "--symverdir", dest="symverdir",
+                      help="Path to kernel source directories (default /usr/src/kernels/)"
+                           "(e.g. DIR/[KERNEL]/Module.symvers)",
+                      metavar="DIR", default="/usr/src/kernels/")
     parser.add_option("-n", "--name", dest="reportname",
                       help="A name for the set of kmods being reported on",
                       metavar="STRING")
@@ -68,133 +64,150 @@ def main():
 
     (options, args) = parser.parse_args(sys.argv[1:])
 
-    if not options.ko:
+    if not options.kmods and not args:
         print("at least one ko file is required")
         sys.exit(1)
 
-    (kernelModuleFiles, temp_dir)  = extract_xz_files(options.ko)
-    factory = KscFactory(kernelModuleFiles,
-                         options.releasedir,
-                         options.release,
-                         options.stablelistdir,
-                         )
+    (kernel_module_files, temp_dir) = extract_xz_files(options.kmods + args)
+    runner = KscRunner(kernel_module_files,
+                       options.releasedir,
+                       options.symverdir
+                       )
 
-    kscreport = report.Report()
+    report = kscreport.KscReport()
 
+    kernels = options.kernels
+    if not kernels:
+        kernels = [os.uname().release]
 
-    for i in options.symvers:
-        symver_parts = i.split(":", 1)
-        symver_file = symver_parts[0]
-        if len(symver_parts) == 2:
-            symver_name = symver_parts[1]
-        else:
-            symver_name = os.path.dirname(symver_parts[0])
-            symver_name = os.path.basename(symver_name)
+    runner.sanity_check_kmods()
 
-        symver_result = factory.generate_ksc(symver_file, symver_name)
-        kscreport.add_ksc(symver_result)
+    for k in kernels:
+        ksc_result = runner.generate_ksc(k)
+        report.add_ksc(ksc_result)
 
     if options.summary:
         if options.quiet:
-            kscreport.summary(options.reportfile, options.overwrite)
+            report.summary(options.reportfile, options.overwrite)
         else:
-            print(kscreport.summary(options.reportfile, options.overwrite))
+            print(report.summary(options.reportfile, options.overwrite))
+            print(report.changed(options.reportfile, options.overwrite))
     else:
         if options.quiet:
-            kscreport.full_report(options.reportfile, options.overwrite)
+            report.full_report(options.reportfile, options.overwrite)
         else:
-            print(kscreport.full_report(options.reportfile, options.overwrite))
+            print(report.full_report(options.reportfile, options.overwrite))
 
     if temp_dir:
         shutil.rmtree(temp_dir)
 
 
 def extract_xz_files(raw_ko_files):
+    """
+    Extract a list of xz compressed files into a temp_dir
+    the caller is responsible for cleaning up the temp_dir
+    args:
+        raw_ko_files - list - a list of files in xz format
+    returns:
+        extracted_files - the full paths to the extracted files
+        temp_dir - the path to the temp directory
+    """
     temp_dir = None
-    kernelModuleFiles = list()
+    extracted_files = list()
     for k in raw_ko_files:
         if k[-3:] == ".ko":
-            kernelModuleFiles.append(k)
+            extracted_files.append(k)
         elif k[-3:] == ".xz":
 
             with lzma.open(k) as xzfile:
                 file_content = xzfile.read()
 
-            if temp_dir == None:
+            if temp_dir is None:
                 temp_dir = tempfile.mkdtemp()
             kofile_name = temp_dir + os.sep + os.path.basename(k[:-3])
 
             with open(kofile_name, "wb") as kofile:
                 kofile.write(file_content)
 
-            kernelModuleFiles.append(kofile_name)
-    return (kernelModuleFiles, temp_dir)
+            extracted_files.append(kofile_name)
+    return (extracted_files, temp_dir)
 
-class KscFactory(ksc.Ksc):
+
+class KscRunner(ksc.Ksc):
     """
         wrapper class around the ksc utility that generates result objects
     """
     def __init__(self,
                  ko_filepath,
-                 releasedir=None,
-                 release=None,
-                 stablelistdir="/lib/modules/",
+                 releasedir="/lib/modules/kabi-current/",
+                 symverdir="/usr/src/kernels/",
                  ):
         """
+            setup ksc to test
         """
 
+        self.kernelsymvers = dict()
         self.modinfo = dict()
         super().__init__()
         self.total = None
 
-        self.stablelist = stablelistdir
-        self.ko = ko_filepath
-        self.releasedir = self.get_releasedir(releasedir, stablelistdir, release)
+        self.symverdir = symverdir
+        self.kmods = ko_filepath
+        self.releasedir = releasedir
 
         # override the value in utils so we can control the whitelist dir we use
         utils.WHPATH = ""
 
-        self.find_arch(self.ko)
+        self.find_arch(self.kmods)
 
         self.read_stablelists()
 
-        for kmod_path in self.ko:
+        for kmod_path in self.kmods:
             self.parse_ko(kmod_path, process_stablelists=True)
             self.get_modinfo(kmod_path)
 
         self.remove_internal_symbols()
 
 
-    def generate_ksc(self, symvers, name):
+    def sanity_check_kmods(self):
+        """
+            perform sanity checks on the kmods passed
+            mostly that they are all compiled for the same kernel version
+            if not we're going to get into a mess so just exit with an error.
+        """
+        last = None
+        for k in self.all_symbols_used.keys():
+            kmod_kernel_version = self.modinfo[k]["vermagic"].split(" ")[0]
+            if last is not None and kmod_kernel_version != last:
+                print("kmods are compiled for differnet kernels! %s != %s"%(
+                    last, kmod_kernel_version))
+                sys.exit(2)
+
+
+    def generate_ksc(self, test_kernel_version):
         """
             read in the kernel symbols and generate the reresult object
         """
-        self.read_symvers(symvers)
-        res = result.Result(
-            name,
-            symvers,
-            self.total,
+        if test_kernel_version not in self.kernelsymvers:
+            self.kernelsymvers[test_kernel_version] = self.read_symvers(test_kernel_version)
+
+        #all the kmods have the same vermagic or sanity_check failed
+        kmod_kernel_version = self.modinfo[self.kmods[0]]["vermagic"].split(" ")[0]
+
+        if kmod_kernel_version not in self.kernelsymvers:
+            self.kernelsymvers[kmod_kernel_version] = self.read_symvers(kmod_kernel_version)
+
+        res = kscresult.KscResult(
+            test_kernel_version,
+            self.kernelsymvers[test_kernel_version],
+            self.kernelsymvers[kmod_kernel_version],
             self.modinfo,
             self.nonstable_symbols_used,
-            self.import_ns,
-            self.stable_symbols,
-            self.all_symbols_used
+            self.stable_symbols
             )
 
         return res
 
-
-    def get_releasedir(self, releasedir, stablelistdir, release):
-        """
-            get the directory containing the stable abi list file
-        """
-        if releasedir:
-            return releasedir
-
-        if release:
-            return os.path.join(stablelistdir, 'kabi-rhel' + release.replace('.', ''))
-
-        return os.path.join(stablelistdir, 'kabi-current')
 
 
     def get_modinfo(self, path):
@@ -227,16 +240,31 @@ class KscFactory(ksc.Ksc):
             sys.exit(1)
 
 
-    def read_symvers(self, symverfile):
+    def read_symvers(self, kernelversion):
         """
             read the list of symbols in the kernel
         """
-        self.total = utils.read_total_list(symverfile)
+        symverfile = os.path.join(self.symverdir, kernelversion, "Module.symvers")
+
+        result = dict()
+        try:
+            with open(symverfile, "r") as fptr:
+                for line in fptr.readlines():
+                    if line.startswith("["):
+                        continue
+                    fields = line.split()
+                    result[fields[1]] = fields[0]
+        except IOError as err:
+            print(err)
+            print("Missing all symbol list")
+            print("Do you have the kernel-devel package installed?")
+            sys.exit(1)
+        return result
 
 
     def read_stablelists(self):
         """
-            read in the lisy of stable abi symbols
+            read in the list of stable abi symbols
         """
         self.matchdata, exists = utils.read_list(self.arch, self.releasedir, self.verbose)
         if not exists:
