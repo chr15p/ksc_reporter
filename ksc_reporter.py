@@ -15,7 +15,7 @@
 
 import sys
 import os
-from optparse import OptionParser
+import argparse
 import tempfile
 import shutil
 import lzma
@@ -31,44 +31,47 @@ import utils
 
 def main():
     """
-        run the test, peint the result
+        run the test, print the result
     """
-    parser = OptionParser()
-    parser.add_option("-m", "--kmod", action="append", dest="kmods",
-                      help="path to a kmod file", metavar="MODULE")
-    parser.add_option("-f", "--reportfile", dest="reportfile",
-                      metavar="REPORTFILE", default="~/ksc-report.txt",
-                      help="file to write the report to "
-                           "(default ~/ksc-report.txt)")
-    parser.add_option("-d", "--releasedir", dest="releasedir",
-                      help="directory containing the stablelists to use ",
-                      metavar="DIR", default="/lib/modules/kabi-current/")
-    parser.add_option("-k", "--kernel", action="append", dest="kernels",
-                      help="kernel version to test agains", metavar="KERNEL")
-    parser.add_option("-y", "--symverdir", dest="symverdir",
-                      help="Path to kernel source directories (default /usr/src/kernels/)"
-                           "(e.g. DIR/[KERNEL]/Module.symvers)",
-                      metavar="DIR", default="/usr/src/kernels/")
-    parser.add_option("-n", "--name", dest="reportname",
-                      help="A name for the set of kmods being reported on",
-                      metavar="STRING")
-    parser.add_option("-o", "--overwrite",
-                      action="store_true", dest="overwrite", default=False,
-                      help="overwrite files without warning")
-    parser.add_option("-s", "--summary",
-                      action="store_true", dest="summary", default=False,
-                      help="produce a summary report")
-    parser.add_option("-q", "--quiet",
-                      action="store_true", dest="quiet", default=False,
-                      help="do not write report to stdout")
 
-    (options, args) = parser.parse_args(sys.argv[1:])
+    parser = argparse.ArgumentParser()
 
-    if not options.kmods and not args:
+    parser.add_argument("-m", "--kmod", action="append", dest="kmods",
+                        help="path to a kmod file", metavar="KMOD")
+    parser.add_argument("-f", "--reportfile", dest="reportfile",
+                        metavar="REPORTFILE", default="~/ksc-report.txt",
+                        help="file to write the report to "
+                             "(default ~/ksc-report.txt)")
+    parser.add_argument("-d", "--releasedir", dest="releasedir",
+                        help="directory containing the stablelists to use ",
+                        metavar="DIR", default="/lib/modules/kabi-current/")
+    parser.add_argument("-k", "--kernel", action="append", dest="kernels",
+                        help="kernel version to test agains", metavar="KERNEL")
+    parser.add_argument("-y", "--symverdir", dest="symverdir",
+                        help="Path to kernel source directories (default /usr/src/kernels/)"
+                             "(e.g. DIR/[KERNEL]/Module.symvers)",
+                        metavar="DIR", default="/usr/src/kernels/")
+    parser.add_argument("-o", "--overwrite",
+                        action="store_true", dest="overwrite", default=False,
+                        help="overwrite files without warning")
+    parser.add_argument("-s", "--summary",
+                        action="store_true", dest="summary", default=False,
+                        help="produce a summary report")
+    parser.add_argument("-q", "--quiet",
+                        action="store_true", dest="quiet", default=False,
+                        help="do not write report to stdout")
+    parser.add_argument("module", nargs='*',
+                        help="path to a kmod file (as per the --kmod arg)", metavar="KMOD")
+
+    options = parser.parse_args()
+
+    # options.kmods and options.module are both paths to kmod with differnet names to keep
+    # argparse happy we probably dont need the -m argument but its nicely explicit
+    if not options.kmods and not options.module:
         print("at least one ko file is required")
         sys.exit(1)
 
-    (kernel_module_files, temp_dir) = extract_xz_files(options.kmods + args)
+    (kernel_module_files, temp_dir) = extract_xz_files(options.kmods + options.module)
     runner = KscRunner(kernel_module_files,
                        options.releasedir,
                        options.symverdir
