@@ -45,7 +45,7 @@ func canonicalisePath(path string) string {
 	return filepath.Clean("/" + path)
 }
 
-func analyseKmod(extractionDir string, symvers []string, kmodsToAnalyse map[string]string, longReport bool) error {
+func analyseKmod(extractionDir string, kernels []string, kmodsToAnalyse map[string]string, longReport bool) error {
 	var args []string
 	logger.Info("running analysis")
 	//var args []string
@@ -55,25 +55,20 @@ func analyseKmod(extractionDir string, symvers []string, kmodsToAnalyse map[stri
 		args = append(args, "-s")
 	}
 	for _, kmod := range kmodsToAnalyse {
-		args = append(args, "-k", kmod)
+		args = append(args, "-m", kmod)
 	}
 
 	//fmt.Println("symvers", symvers)
-	for _, s := range symvers{
+	for _, s := range kernels{
 		//fmt.Println("symvers s=", s)
-		args = append(args, "-y", s)
+		args = append(args, "-k", s)
 	}
 	/*
-	./analyse_kmod.py
-	-k ./cfg80211_rhel8_7.ko
-	-f ./ksc-report.txt
-	-o
-	-y /usr/src/kernels/4.18.0-372.26.1.el8_6.x86_64/Module.symvers
-	-y /usr/src/kernels/4.18.0-372.26.1.el8_6.x86_64/Module.symvers
-	-y /usr/src/kernels/4.18.0-372.32.1.el8_6.x86_64/Module.symvers
-	-y /usr/src/kernels/4.18.0-425.3.1.el8.x86_64/Module.symvers
+	./ksc_reporter.py 
+		-m ../simple-kmod/simple-procfs-kmod.ko 
+		-f ./ksc_report.txt 
+		-k 4.18.0-372.32.1.el8_6.x86_64  
 	*/
-//fmt.Printf("args=%+v\n",args)
 	logger.Info("running analysis", "command", "./analyse_kmod.py " + strings.Join(args, " "))
 	out, err := exec.Command("./ksc_reporter.py", args...).Output()
 	//cmd := exec.Command("./analyse_kmod.py", args...)
@@ -238,7 +233,7 @@ func main() {
 	var err error
 	var imageName string
 	var extractionDir string
-	var symversList string
+	var kernel string
 	var longReport bool
 	var quiet bool
 	var insecure bool
@@ -247,7 +242,7 @@ func main() {
 	logger = klogr.New().V(0)
 
 	flag.StringVar(&imageName, "image", "", "name of the image to sign")
-	flag.StringVar(&symversList, "symvers", "", "colon seperated list of symvers files")
+	flag.StringVar(&kernel, "kernel", "", "colon seperated list of kernels to test against")
 	flag.BoolVar(&longReport, "long", false, "produce a long form report")
 	flag.BoolVar(&quiet, "quiet", false, "supress log messages")
 	flag.BoolVar(&insecure, "insecure", false, "images can be pulled from an insecure (plain HTTP) registry")
@@ -268,7 +263,7 @@ func main() {
 	}
 	//defer os.RemoveAll(extractionDir)
 
-	symversFiles := strings.Split(symversList, ":")
+	kernelList := strings.Split(kernel, ":")
 	//make a map of the files to sign so we can track what we want to sign
 	kmodsToAnalyse := make(map[string]string)
 	a := authn.DefaultKeychain
@@ -279,7 +274,6 @@ func main() {
 	}
 
 	logger.Info("Successfully pulled image", "image", imageName)
-	logger.Info("Looking for files", "filelist", strings.Replace(symversList, ":", " ", -1))
 
 	/*
 	** loop through all the layers in the image from the top down
@@ -289,6 +283,6 @@ func main() {
 		die(9, "failed to search image", err)
 	}
 
-	analyseKmod(extractionDir, symversFiles, kmodsToAnalyse, longReport)
+	analyseKmod(extractionDir, kernelList, kmodsToAnalyse, longReport)
 
 }
