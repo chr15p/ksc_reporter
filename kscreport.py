@@ -44,6 +44,33 @@ class KscReport():
         return yaml.dump(report, default_flow_style=False)
 
 
+    def totals(self, filename=None, overwrite=False):
+        """
+        generate a yaml totals report from the kscresults
+        args:
+          filename - string - if given write it out to that file as well as returning it
+          overwrite - bool - if True truncate the file (otherwise append to it)
+        """
+        report = dict()
+        for k in self.kscs:
+            changed = 0
+            unchanged = 0
+            for ko_file in k.kmods:
+                if len(k.get_unknown_stable_symbols(ko_file)) > 0 or \
+                   len(k.get_unknown_unstable_symbols(ko_file)) > 0 or \
+                   len(k.get_changed_unstable_symbols(ko_file)) > 0 or \
+                   len(k.get_changed_stable_symbols(ko_file)) > 0:
+                    changed += 1
+                else:
+                    unchanged += 1
+
+            report[k.kernelversion] = {'changed': changed, 'unchanged': unchanged}
+
+        if filename:
+            self.write_yaml_file(report, filename, overwrite)
+        return yaml.dump(report, default_flow_style=False)
+
+
     def changed(self, filename=None, overwrite=False):
         """
         generate a yaml report of how many symbols have changed in the kernel

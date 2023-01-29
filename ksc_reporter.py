@@ -38,6 +38,8 @@ def main():
 
     parser.add_argument("-m", "--kmod", action="append", dest="kmods",
                         help="path to a kmod file", metavar="KMOD")
+    parser.add_argument("--kmoddir", action="store", dest="kmoddir",
+                        help="a directory containing kmods", metavar="DIR")
     parser.add_argument("-f", "--reportfile", dest="reportfile",
                         metavar="REPORTFILE", default="~/ksc-report.txt",
                         help="file to write the report to "
@@ -54,9 +56,9 @@ def main():
     parser.add_argument("-o", "--overwrite",
                         action="store_true", dest="overwrite", default=False,
                         help="overwrite files without warning")
-    parser.add_argument("-s", "--summary",
-                        action="store_true", dest="summary", default=False,
-                        help="produce a summary report")
+    parser.add_argument("-r", "--report",
+                        action="store", dest="report", default="summary",
+                        help="report type to produce (summary | full | totals | changed) ")
     parser.add_argument("-q", "--quiet",
                         action="store_true", dest="quiet", default=False,
                         help="do not write report to stdout")
@@ -67,11 +69,21 @@ def main():
 
     # options.kmods and options.module are both paths to kmod with differnet names to keep
     # argparse happy we probably dont need the -m argument but its nicely explicit
-    if not options.kmods and not options.module:
+
+    if options.kmods or options.module:
+        (kernel_module_files, temp_dir) = extract_xz_files(options.kmods + options.module)
+    elif options.kmoddir:
+        files_in_dir = [os.path.join(options.kmoddir, f) for f in os.listdir(options.kmoddir)
+                        if os.path.isfile(os.path.join(options.kmoddir, f))]
+        (kernel_module_files, temp_dir) = extract_xz_files(files_in_dir)
+    else:
         print("at least one ko file is required")
         sys.exit(1)
 
-    (kernel_module_files, temp_dir) = extract_xz_files(options.kmods + options.module)
+    if kernel_module_files == []:
+        print("no valid ko files supplied")
+        sys.exit(1)
+
     runner = KscRunner(kernel_module_files,
                        options.releasedir,
                        options.symverdir
@@ -89,17 +101,17 @@ def main():
         ksc_result = runner.generate_ksc(k)
         report.add_ksc(ksc_result)
 
-    if options.summary:
-        if options.quiet:
-            report.summary(options.reportfile, options.overwrite)
-        else:
-            print(report.summary(options.reportfile, options.overwrite))
-            print(report.changed(options.reportfile, options.overwrite))
+    if options.report == 'full':
+        yaml = report.full_report(options.reportfile, options.overwrite)
+    elif options.report == 'changed':
+        yaml = report.changed(options.reportfile, options.overwrite)
+    elif options.report == 'total' or options.report == 'totals':
+        yaml = report.totals(options.reportfile, options.overwrite)
     else:
-        if options.quiet:
-            report.full_report(options.reportfile, options.overwrite)
-        else:
-            print(report.full_report(options.reportfile, options.overwrite))
+        yaml = report.summary(options.reportfile, options.overwrite)
+
+    if not options.quiet:
+        print(yaml)
 
     if temp_dir:
         shutil.rmtree(temp_dir)
@@ -171,7 +183,6 @@ class KscRunner(ksc.Ksc):
 
         self.remove_internal_symbols()
 
-
     def sanity_check_kmods(self):
         """
             perform sanity checks on the kmods passed
@@ -222,12 +233,14 @@ class KscRunner(ksc.Ksc):
         try:
             out = utils.run("modinfo '%s'" % path)
             for line in out.split("\n"):
-                if len(line) == 0:
+                if len(line) == 0 or line[0] == '\t':
                     continue
                 if line[0] == '\t':
                     self.modinfo[path][prevkey] += line.strip()
                 else:
                     data = line.split(":", 1)
+                    if len(data) < 2:
+                        continue
                     if data[0] == "parm":
                         parms = data[1].strip().split(":", 1)
                         if "parm" not in self.modinfo[path]:
@@ -239,7 +252,7 @@ class KscRunner(ksc.Ksc):
                         self.modinfo[path][data[0]] = data[1].strip()
                     prevkey = data[0]
         except Exception as err:
-            print(err)
+            print("get_modinfo failed: %s"%err)
             sys.exit(1)
 
 
