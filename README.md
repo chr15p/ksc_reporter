@@ -16,8 +16,8 @@ dnf install kernel-abi-stablelists kernel-devel
 ### help
 ```
 ~# ./ksc_reporter.py -h
-usage: ksc_reporter.py [-h] [-m KMOD] [-f REPORTFILE] [-d DIR] [-k KERNEL]
-                       [-y DIR] [-o] [-s] [-q]
+usage: ksc_reporter.py [-h] [-m KMOD] [--kmoddir DIR] [-f REPORTFILE] [-d DIR]
+                       [-k KERNEL] [-y DIR] [-o] [-r REPORT] [-q]
                        [KMOD [KMOD ...]]
 
 positional arguments:
@@ -26,6 +26,7 @@ positional arguments:
 optional arguments:
   -h, --help            show this help message and exit
   -m KMOD, --kmod KMOD  path to a kmod file
+  --kmoddir DIR         a directory containing kmods
   -f REPORTFILE, --reportfile REPORTFILE
                         file to write the report to (default ~/ksc-report.txt)
   -d DIR, --releasedir DIR
@@ -36,14 +37,16 @@ optional arguments:
                         Path to kernel source directories (default
                         /usr/src/kernels/)(e.g. DIR/[KERNEL]/Module.symvers)
   -o, --overwrite       overwrite files without warning
-  -s, --summary         produce a summary report
+  -r REPORT, --report REPORT
+                        report type to produce (summary | full | totals |
+                        changed)
   -q, --quiet           do not write report to stdout
-```
+
 
 
 ### Example usage
 ```
-~# ./ksc_reporter.py -m ../simple-kmod/simple-procfs-kmod.ko -f ./ksc_report.txt -d /lib/modules/kabi-current/ -k 4.18.0-425.3.1.el8.x86_64 -k 4.18.0-372.32.1.el8_6.x86_64  -y /usr/src/kernels/  ../simple-kmod/simple-kmod.ko -s
+~# ./ksc_reporter.py -m ../simple-kmod/simple-procfs-kmod.ko -f ./ksc_report.txt -d /lib/modules/kabi-current/ -k 4.18.0-425.3.1.el8.x86_64 -k 4.18.0-372.32.1.el8_6.x86_64  -y /usr/src/kernels/  ../simple-kmod/simple-kmod.ko -r summary
 
 4.18.0-372.32.1.el8_6.x86_64:
   simple-kmod.ko:

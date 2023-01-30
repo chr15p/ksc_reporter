@@ -14,11 +14,11 @@ import (
 	"io"
 	//"io/fs"
 	"k8s.io/klog/v2/klogr"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"net/http"
 )
 
 func checkArg(arg *string, varname string, fallback string) {
@@ -50,26 +50,28 @@ func analyseKmod(extractionDir string, kernels []string, kmodsToAnalyse map[stri
 	logger.Info("running analysis")
 	//var args []string
 	//args = append(args, "-s", "-f", extractionDir + "/ksc-report.txt" )
-	args = append(args, "-f", extractionDir + "/ksc-report.txt" )
+	args = append(args, "-f", extractionDir+"/ksc-report.txt")
 	if longReport == false {
-		args = append(args, "-s")
+		args = append(args, "-r", "summary")
+	} else {
+		args = append(args, "-r", "full")
 	}
 	for _, kmod := range kmodsToAnalyse {
 		args = append(args, "-m", kmod)
 	}
 
 	//fmt.Println("symvers", symvers)
-	for _, s := range kernels{
+	for _, s := range kernels {
 		//fmt.Println("symvers s=", s)
 		args = append(args, "-k", s)
 	}
 	/*
-	./ksc_reporter.py 
-		-m ../simple-kmod/simple-procfs-kmod.ko 
-		-f ./ksc_report.txt 
-		-k 4.18.0-372.32.1.el8_6.x86_64  
+		./ksc_reporter.py
+			-m ../simple-kmod/simple-procfs-kmod.ko
+			-f ./ksc_report.txt
+			-k 4.18.0-372.32.1.el8_6.x86_64
 	*/
-	logger.Info("running analysis", "command", "./analyse_kmod.py " + strings.Join(args, " "))
+	logger.Info("running analysis", "command", "./analyse_kmod.py "+strings.Join(args, " "))
 	out, err := exec.Command("./ksc_reporter.py", args...).Output()
 	//cmd := exec.Command("./analyse_kmod.py", args...)
 	//if err := cmd.Run(); err != nil {
@@ -79,7 +81,7 @@ func analyseKmod(extractionDir string, kernels []string, kmodsToAnalyse map[stri
 	if err != nil {
 		return fmt.Errorf("error running /analyse_kmod.py returned error: %v\n", err)
 	}
-	fmt.Printf("\n%s\n",out)
+	fmt.Printf("\n%s\n", out)
 
 	return nil
 }
@@ -139,7 +141,7 @@ func extractFile(filename string, header *tar.Header, tarreader io.Reader, data 
 	if len(filename) < 3 {
 		return nil
 	}
-	if filename[len(filename)-3:]  != ".ko" {
+	if filename[len(filename)-3:] != ".ko" {
 		return nil
 	}
 	canonfilename := filepath.Base(filename)
@@ -150,7 +152,7 @@ func extractFile(filename string, header *tar.Header, tarreader io.Reader, data 
 		logger.Info("Found kmod", "kmod", canonfilename, "matches kmod in image", header.Name)
 		//its a file we wanted and haven't already seen
 		//extract to the local filesystem
-		err := ExtractFileToFile(extractionDir + "/" + canonfilename, header, tarreader)
+		err := ExtractFileToFile(extractionDir+"/"+canonfilename, header, tarreader)
 		if err != nil {
 			return err
 		}
@@ -162,7 +164,6 @@ func extractFile(filename string, header *tar.Header, tarreader io.Reader, data 
 	}
 	return nil
 }
-
 
 func GetImageByName(imageName string, kc authn.Keychain, insecure bool, skipTLSVerify bool) (v1.Image, error) {
 	options := []crane.Option{}
@@ -224,7 +225,6 @@ func WalkFilesInImage(image v1.Image, fn func(filename string, header *tar.Heade
 
 	return err
 }
-
 
 var logger logr.Logger
 
