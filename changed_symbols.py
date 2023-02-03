@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
-# Copyright 2023 Red Hat Inc.                                                                            
-# Author: Chris Procter <cprocter@redhat.com>                                                            
+# Copyright 2023 Red Hat Inc.
+# Author: Chris Procter <cprocter@redhat.com>
 
-# This program is free software; you can redistribute it and/or modify                                   
-# it under the terms of the GNU General Public License as published by                                   
-# the Free Software Foundation; either version 2 of the License, or                                      
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
 # (at your option) any later version.  See
-# http://www.gnu.org/copyleft/gpl.html for the full text of the 
-# license.        
+# http://www.gnu.org/copyleft/gpl.html for the full text of the
+# license.
 
 import os
 import sys
@@ -16,6 +16,10 @@ import re
 import argparse
 
 def read_whitelist(fpath):
+    """
+        read the whitelist file
+        returns a list of the symbols in the whitelist
+    """
     result = []
     try:
         #print("Reading %s" % fpath)
@@ -53,16 +57,25 @@ def read_symvers(symverdir, kernelversion):
         sys.exit(1)
     return result
 
-def kernel_key(k):
-    x = re.split('[\.\-]',k)
-    l = len(x) 
-    string=""
+def kernel_key(kernel):
+    """
+        turn a kernel version into a string that can then be sorted on
+    """
+    version = re.split(r'[\.\-]', kernel)
+    l = len(version)
+    string = ""
     for i in range(0, l):
-        string +=x[i].rjust(3,'0')
+        string += version[i].rjust(3, '0')
 
     return string
 
-def get_filenames(kernellist, symverdir=None):
+def sort_kernel_directorys(kernellist, symverdir=None):
+    """
+        produce a sorted list of the kernel directories
+        we're expecting to be passed a list of $DIR/$KERNEL paths
+        and for each for a $DIR/$KERNEL/Module.symvers file to exist
+        this sorts that list on the $KERNEL part
+    """
     dirlist = dict()
     filelist = list()
     if symverdir:
@@ -70,36 +83,34 @@ def get_filenames(kernellist, symverdir=None):
             symverdir += '/'
         offset = len(symverdir)
     else:
-        offset=0
+        offset = 0
 
     for f in kernellist:
         if offset != 0 and f[0:offset] == symverdir:
-            strict_ver = re.sub(r'\.el.*\.x86_64$',"", f[offset:]).replace('-','.')
+            strict_ver = re.sub(r'\.el.*\.x86_64$', "", f[offset:]).replace('-', '.')
             dirlist[strict_ver] = f[offset:]
         else:
-            strict_ver = re.sub(r'\.el.*\.x86_64$',"", f).replace('-','.')
+            strict_ver = re.sub(r'\.el.*\.x86_64$', "", f).replace('-', '.')
             dirlist[strict_ver] = f
-                    
-    sorteddirlist= sorted(dirlist,key=kernel_key)
+
+    sorteddirlist = sorted(dirlist, key=kernel_key)
     for k in sorteddirlist:
         filelist.append(dirlist[k])
-#sys.exit(0)
 
     return filelist
 
-def get_y_version(kernel):
-    x = re.split('[\.\-]',kernel)
-    return x[0]+"."+x[1]+"."+x[2]+"-"+x[3]+".el8.x86_64"
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("-b","--basekernel", action="store", dest="basekernel", default=None,
+parser.add_argument("-b", "--basekernel", action="store", dest="basekernel", default=None,
                     help="a kernel version to compare all others to", metavar="KVER")
-parser.add_argument("-k","--kerneldir", action="store", dest="kerneldir",
+parser.add_argument("-k", "--kerneldir", action="store", dest="kerneldir",
                     help="a directory containing kernels to compare", metavar="DIR")
 parser.add_argument("-w", "--whitelist", dest="whitelist",
                     help="file containing the whitelist to use ",
                     metavar="FILE", default="/lib/modules/kabi-current/kabi_stablelist_x86_64")
+parser.add_argument("-q", "--quiet", action="store_true", dest="quiet",
+                    help="do not print headers")
 parser.add_argument("kernel", nargs='*',
                     help="a kernel version within kerneldir", metavar="KERNEL")
 options = parser.parse_args()
@@ -108,47 +119,51 @@ if len(sys.argv) == 1:
     parser.print_help(sys.stderr)
     sys.exit(0)
 
-if options.kernel and len(options.kernel)< 2:
+if options.kernel and len(options.kernel) < 2:
     print("if any kernel args are given then at least 2 specified")
     sys.exit(0)
 
 if options.kerneldir:
-    kerneldir = options.kerneldir
+    KERNELDIR = options.kerneldir
 else:
     if options.kernel:
-        kerneldir = os.path.dirname(options.kernel[0])
+        KERNELDIR = os.path.dirname(options.kernel[0])
     else:
-        kerneldir="./kernels"
+        KERNELDIR = "./kernels"
 
-filelist = list()
+sorted_kernels = list()
 if options.basekernel:
-    filelist.append(options.basekernel)
+    sorted_kernels.append(options.basekernel)
 
 if options.kernel:
-    kernellist = options.kernel
+    KERNEL_LIST = options.kernel
 else:
-    kernellist = os.listdir(kerneldir)
+    KERNEL_LIST = os.listdir(KERNELDIR)
 
-filelist += get_filenames(kernellist, kerneldir)
-whitelist = read_whitelist(options.whitelist)
+sorted_kernels += sort_kernel_directorys(KERNEL_LIST, KERNELDIR)
+WHITELIST = read_whitelist(options.whitelist)
 
-print("%-30s,%-30s,%-6s,%s"%("From","To", "stable", "unstable"))
-for i in range(1,len(filelist)):
+if not options.quiet:
+    print("%-30s,%-30s,%-6s,%s"%("From", "To", "stable", "unstable"))
+
+for i in range(1, len(sorted_kernels)):
     if options.basekernel:
-        kernel1= filelist[0]
+        kernel1 = sorted_kernels[0]
     else:
-        kernel1= filelist[i-1]
-    kernel2 = filelist[i]
-    file1= read_symvers(kerneldir, kernel1)
+        kernel1 = sorted_kernels[i-1]
+    kernel2 = sorted_kernels[i]
 
-    file2= read_symvers(kerneldir, kernel2)
-    stable=0
-    unstable=0
-    for k,v in file1.items():
-    	if k not in file2 or file2[k] != v:
-                if k not in whitelist:
-                    unstable+=1
-                else:
-                    stable+=1
-      
+    ## really ought to cache these so we dont keep rereading the same file
+    file1 = read_symvers(KERNELDIR, kernel1)
+
+    file2 = read_symvers(KERNELDIR, kernel2)
+    stable = 0
+    unstable = 0
+    for k, v in file1.items():
+        if k not in file2 or file2[k] != v:
+            if k not in WHITELIST:
+                unstable += 1
+            else:
+                stable += 1
+
     print("%-30s,%-30s,%-6d,%d"%(kernel1, kernel2, stable, unstable))
