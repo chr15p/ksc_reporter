@@ -1,4 +1,5 @@
 import os
+import re
 import yaml
 
 class KscReport():
@@ -22,7 +23,7 @@ class KscReport():
         self.kscs.append(ksc_result)
 
 
-    def summary(self, filename=None, overwrite=False):
+    def report_summary_yaml(self, filename=None, overwrite=False):
         """
         generate a yaml summary report from the kscresults
         args:
@@ -44,7 +45,7 @@ class KscReport():
         return yaml.dump(report, default_flow_style=False)
 
 
-    def totals(self, filename=None, overwrite=False):
+    def report_totals_yaml(self, filename=None, overwrite=False):
         """
         generate a yaml totals report from the kscresults
         args:
@@ -71,7 +72,29 @@ class KscReport():
         return yaml.dump(report, default_flow_style=False)
 
 
-    def changed(self, filename=None, overwrite=False):
+    def report_totals_csv(self, filename=None, overwrite=False):
+        """
+        generate a yaml totals report from the kscresults
+        args:
+          filename - string - if given write it out to that file as well as returning it
+          overwrite - bool - if True truncate the file (otherwise append to it)
+        """
+        report = "kernel, changed\n"
+        for k in sorted(self.kscs, key=kernel_key):
+            changed = 0
+            for ko_file in k.kmods:
+                changed += len(k.get_unknown_stable_symbols(ko_file)) +\
+                          len(k.get_unknown_unstable_symbols(ko_file)) +\
+                          len(k.get_changed_unstable_symbols(ko_file)) +\
+                          len(k.get_changed_stable_symbols(ko_file))
+            report += "%s,%s\n"%(k.kernelversion, changed)
+
+        if filename:
+            self.write_yaml_file(report, filename, overwrite)
+        return report
+
+
+    def report_changed_yaml(self, filename=None, overwrite=False):
         """
         generate a yaml report of how many symbols have changed in the kernel
         args:
@@ -96,7 +119,7 @@ class KscReport():
         return yaml.dump(report, default_flow_style=False)
 
 
-    def full_report(self, filename=None, overwrite=True):
+    def report_full_yaml(self, filename=None, overwrite=True):
         """
         generate a full yaml report of all the symbols used by the kmod classified by
         if they are stable/unstable/unknown and if they have changed or not between the i
@@ -133,6 +156,11 @@ class KscReport():
 
         return yaml.dump(report, default_flow_style=False)
 
+    def write_file(self, report, filename, overwrite):
+        output_filename = self.prepare_file(filename, overwrite)
+        with open(output_filename, "a") as f:
+            f.write(report)
+
 
     def write_yaml_file(self, report, filename, overwrite):
         """
@@ -159,3 +187,21 @@ class KscReport():
                     f.truncate()
 
         return output_filename
+
+
+
+
+def kernel_key(kernel):
+    """
+        turn a kernel version into a string that can then be sorted on
+    """
+    version = re.split(r'[\.\-]', kernel.kernelversion)
+    vlen = len(version)-2
+    string = ""
+    for i in range(0, 6):
+        if i < vlen:
+            string += version[i].rjust(3, '0')
+        else:
+            string += '000'
+
+    return string

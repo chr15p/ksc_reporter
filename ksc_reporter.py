@@ -19,6 +19,7 @@ import argparse
 import tempfile
 import shutil
 import lzma
+import fnmatch
 
 import kscreport
 import kscresult
@@ -49,6 +50,9 @@ def main():
                         metavar="DIR", default="/lib/modules/kabi-current/")
     parser.add_argument("-k", "--kernel", action="append", dest="kernels",
                         help="kernel version to test agains", metavar="KERNEL")
+    parser.add_argument("--kernelmatch", action="store", dest="kernelmatch",
+                        help="test against all kernels in --symverdir that match glob",
+                        metavar="MATCH")
     parser.add_argument("-y", "--symverdir", dest="symverdir",
                         help="Path to kernel source directories (default /usr/src/kernels/)"
                              "(e.g. DIR/[KERNEL]/Module.symvers)",
@@ -58,7 +62,7 @@ def main():
                         help="overwrite files without warning")
     parser.add_argument("-r", "--report",
                         action="store", dest="report", default="summary",
-                        help="report type to produce (summary | full | totals | changed) ")
+                        help="report type to produce", metavar="REPORT_TYPE")
     parser.add_argument("-q", "--quiet",
                         action="store_true", dest="quiet", default=False,
                         help="do not write report to stdout")
@@ -67,8 +71,12 @@ def main():
 
     options = parser.parse_args()
 
-    # options.kmods and options.module are both paths to kmod with differnet names to keep
-    # argparse happy we probably dont need the -m argument but its nicely explicit
+    if len(sys.argv) < 2:
+        parser.print_help(sys.stderr)
+        report_types = [method[7:] for method in dir(kscreport.KscReport) \
+                        if method.startswith('report_')]
+        print("\nvalid report types:\n\t%s"%("\n\t".join(report_types)))
+        sys.exit(0)
 
     if options.kmods or options.module:
         (kernel_module_files, temp_dir) = extract_xz_files(options.kmods + options.module)
@@ -93,7 +101,10 @@ def main():
 
     kernels = options.kernels
     if not kernels:
-        kernels = [os.uname().release]
+        if options.kernelmatch and options.symverdir:
+            kernels = fnmatch.filter(os.listdir(options.symverdir), options.kernelmatch)
+        else:
+            kernels = [os.uname().release]
 
     runner.sanity_check_kmods()
 
@@ -101,20 +112,21 @@ def main():
         ksc_result = runner.generate_ksc(k)
         report.add_ksc(ksc_result)
 
-    if options.report == 'full':
-        yaml = report.full_report(options.reportfile, options.overwrite)
-    elif options.report == 'changed':
-        yaml = report.changed(options.reportfile, options.overwrite)
-    elif options.report == 'total' or options.report == 'totals':
-        yaml = report.totals(options.reportfile, options.overwrite)
-    else:
-        yaml = report.summary(options.reportfile, options.overwrite)
+    try:
+        report_method = report = getattr(report, 'report_' + options.report)
+    except AttributeError as err:
+        print("unknown report type %s: %s"%(options.report, err))
+        sys.exit(1)
 
+    report_text = report_method(options.reportfile, options.overwrite)
     if not options.quiet:
-        print(yaml)
+        print(report_text)
+
 
     if temp_dir:
         shutil.rmtree(temp_dir)
+
+    sys.exit(0)
 
 
 def extract_xz_files(raw_ko_files):
