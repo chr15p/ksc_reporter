@@ -42,7 +42,7 @@ optional arguments:
                         changed)
   -q, --quiet           do not write report to stdout
 
-
+```
 
 ### Example usage
 ```
